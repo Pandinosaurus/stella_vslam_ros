@@ -40,13 +40,10 @@ else()
     message(STATUS "Address/Memory sanitizer: DISABLED")
 endif()
 
-set(USE_STACK_TRACE_LOGGER OFF CACHE BOOL "Enable automatic stack trace logger of google-glog")
-
+set(USE_STACK_TRACE_LOGGER OFF CACHE BOOL "Enable automatic stack trace logger of backward-cpp")
 if(USE_STACK_TRACE_LOGGER)
+    find_package(Backward REQUIRED)
     message(STATUS "Stack trace logger: ENABLED")
-    # Glog
-    find_package(Glog REQUIRED)
-    include_directories(${GLOG_INCLUDE_DIR})
 else()
     message(STATUS "Stack trace logger: DISABLED")
 endif()
@@ -118,6 +115,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(message_filters REQUIRED)
@@ -156,8 +154,13 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 find_package(yaml-cpp REQUIRED)
 
 # spdlog
-set(spdlog_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/3rd/spdlog/include)
-include_directories(${spdlog_INCLUDE_DIR})
+find_package(spdlog QUIET)
+if(spdlog_FOUND)
+  message(STATUS "Use spdlog on system: ${spdlog_VERSION}")
+else()
+  set(spdlog_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/3rd/spdlog/include)
+  include_directories(${spdlog_INCLUDE_DIR})
+endif()
 
 # filesystem
 set(filesystem_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/3rd/filesystem/include)
@@ -171,30 +174,93 @@ include_directories(${popl_INCLUDE_DIR})
 set(json_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/3rd/json/include)
 include_directories(${json_INCLUDE_DIR})
 
-# pangolin viewer
-set(USE_PANGOLIN_VIEWER OFF CACHE BOOL "Enable Pangolin Viewer")
-if(USE_PANGOLIN_VIEWER)
-    find_library(Pangolin_Viewer_LIB pangolin_viewer)
-    find_package(Pangolin REQUIRED)
+find_package(pangolin_viewer QUIET)
+if(pangolin_viewer_FOUND)
+    message(STATUS "Viewer for examples: PangolinViewer")
+endif()
+find_package(socket_publisher QUIET)
+if(socket_publisher_FOUND)
+    message(STATUS "Viewer for examples: SocketPublisher")
+endif()
+find_package(iridescence_viewer QUIET)
+if(iridescence_viewer_FOUND)
+    message(STATUS "Viewer for examples: IridescenceViewer")
 endif()
 
-# socket publisher
-set(USE_SOCKET_PUBLISHER OFF CACHE BOOL "Enable Socket Publisher")
-if(USE_SOCKET_PUBLISHER)
-    find_package(sioclient REQUIRED)
-    find_package(Protobuf REQUIRED)
-    find_library(Socket_Publisher_LIB socket_publisher)
-    if(NOT PROTOBUF_PROTOC_EXECUTABLE)
-        message(FATAL_ERROR "Could not find protoc executable (PROTOBUF_PROTOC_EXECUTABLE)")
-    endif()
-    message(STATUS "Found protoc executable: ${PROTOBUF_PROTOC_EXECUTABLE}")
-    include_directories(${SIOCLIENT_INCLUDE_DIR} ${PROTOBUF_INCLUDE_DIRS})
-endif()
 
 #########
 # Build #
 #########
 
 add_subdirectory(src)
+
+add_library(stella_vslam_ros_system SHARED
+  src/system.cc src/stella_vslam_ros.cc
+)
+if(pangolin_viewer_FOUND)
+    # set macro flag
+    target_compile_definitions(stella_vslam_ros_system
+        PRIVATE HAVE_PANGOLIN_VIEWER)
+    # link viewer
+    target_link_libraries(stella_vslam_ros_system PRIVATE
+        pangolin_viewer::pangolin_viewer)
+endif()
+if(socket_publisher_FOUND)
+    # set macro flag
+    target_compile_definitions(stella_vslam_ros_system
+        PRIVATE HAVE_SOCKET_PUBLISHER)
+    # link viewer
+    target_link_libraries(stella_vslam_ros_system PRIVATE
+        socket_publisher::socket_publisher ${SIOCLIENT_LIBRARY} ${PROTOBUF_LIBRARIES})
+endif()
+if(iridescence_viewer_FOUND)
+    # Set macro flag
+    target_compile_definitions(stella_vslam_ros_system
+        PRIVATE HAVE_IRIDESCENCE_VIEWER)
+    # Link viewer
+    target_link_libraries(stella_vslam_ros_system PRIVATE
+        iridescence_viewer::iridescence_viewer)
+endif()
+
+# TODO: Move heder files to include directory
+target_include_directories(stella_vslam_ros_system PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<INSTALL_INTERFACE:src>)
+rclcpp_components_register_node(stella_vslam_ros_system PLUGIN "stella_vslam_ros::System" EXECUTABLE system)
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_target_dependencies(stella_vslam_ros_system
+  PUBLIC
+  rclcpp
+  rclcpp_components
+  cv_bridge
+  image_transport
+  message_filters
+  rcutils
+  geometry_msgs
+  nav_msgs
+  sensor_msgs
+  tf2
+  tf2_eigen
+  tf2_geometry_msgs
+  tf2_msgs
+  tf2_ros)
+target_link_libraries(stella_vslam_ros_system PRIVATE
+  yaml-cpp
+  stella_vslam::stella_vslam)
+if(spdlog_FOUND)
+  target_link_libraries(stella_vslam_ros_system PRIVATE
+    spdlog::spdlog)
+endif()
+if(NOT WIN32)
+  ament_environment_hooks(
+    "${ament_cmake_package_templates_ENVIRONMENT_HOOK_LIBRARY_PATH}")
+endif()
+install(TARGETS
+  stella_vslam_ros_system
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
 ament_package()

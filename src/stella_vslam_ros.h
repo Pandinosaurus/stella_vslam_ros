@@ -14,6 +14,7 @@
 #include <message_filters/sync_policies/exact_time.h>
 #include <cv_bridge/cv_bridge.h>
 #include <nav_msgs/msg/odometry.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -27,38 +28,60 @@ namespace stella_vslam_ros {
 class system {
 public:
     system(const std::shared_ptr<stella_vslam::system>& slam,
+           rclcpp::Node* node,
            const std::string& mask_img_path);
     void publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time& stamp);
+    void publish_keyframes(const rclcpp::Time& stamp);
     void setParams();
     std::shared_ptr<stella_vslam::system> slam_;
     std::shared_ptr<stella_vslam::config> cfg_;
-    std::shared_ptr<rclcpp::Node> node_;
-    rclcpp::executors::SingleThreadedExecutor exec_;
+    rclcpp::Node* node_;
     rmw_qos_profile_t custom_qos_;
     cv::Mat mask_;
     std::vector<double> track_times_;
     std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> pose_pub_;
+    std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_pub_;
+    std::shared_ptr<rclcpp::Publisher<geometry_msgs::msg::PoseArray>> keyframes_2d_pub_;
     std::shared_ptr<rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>>
         init_pose_sub_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> map_to_odom_broadcaster_;
-    std::string odom_frame_, map_frame_, base_link_;
-    std::string camera_frame_, camera_optical_frame_;
+    std::string odom_frame_;
+    std::string map_frame_;
+    std::string robot_base_frame_;
+    std::string camera_frame_;
+    std::string camera_optical_frame_;
     std::unique_ptr<tf2_ros::Buffer> tf_;
     std::shared_ptr<tf2_ros::TransformListener> transform_listener_;
+
+    // If true, publish tf from map_frame to odom_frame
     bool publish_tf_;
+
+    // If true, publish keyframes
+    bool publish_keyframes_;
+
+    // Publish pose's timestamp in the future
     double transform_tolerance_;
+
+    // If true, odom_frame is fixed on the xy-plane of map_frame. This is useful when working with 2D navigation modules.
+    bool odom2d_;
+
+    std::string encoding_;
 
 private:
     void init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+
+    Eigen::AngleAxisd rot_ros_to_cv_map_frame_;
 };
 
 class mono : public system {
 public:
     mono(const std::shared_ptr<stella_vslam::system>& slam,
+         rclcpp::Node* node,
          const std::string& mask_img_path);
+    void callback(sensor_msgs::msg::Image::UniquePtr msg);
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg);
 
-    image_transport::Subscriber sub_;
+    std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::Image>> raw_image_sub_;
 };
 
 template<class M, class NodeType = rclcpp::Node>
@@ -92,6 +115,7 @@ public:
 class stereo : public system {
 public:
     stereo(const std::shared_ptr<stella_vslam::system>& slam,
+           rclcpp::Node* node,
            const std::string& mask_img_path,
            const std::shared_ptr<stella_vslam::util::stereo_rectifier>& rectifier);
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr& left, const sensor_msgs::msg::Image::ConstSharedPtr& right);
@@ -108,6 +132,7 @@ public:
 class rgbd : public system {
 public:
     rgbd(const std::shared_ptr<stella_vslam::system>& slam,
+         rclcpp::Node* node,
          const std::string& mask_img_path);
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr& color, const sensor_msgs::msg::Image::ConstSharedPtr& depth);
 

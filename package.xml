@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
     <name>stella_vslam_ros</name>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
     <description>The ROS2 package for stella_vslam</description>
 
     <!-- Authors of the original version of OpenVSLAM -->
@@ -18,6 +18,8 @@
     <buildtool_depend>ament_cmake</buildtool_depend>
 
     <depend>stella_vslam</depend>
+    <depend>rclcpp</depend>
+    <depend>rclcpp_components</depend>
     <depend>eigen</depend>
     <depend>libgoogle-glog-dev</depend>
     <depend>image_transport</depend>
